@@ -6,6 +6,8 @@
 
 ### Added
 
+- ChatGPT subscription OAuth keeps verified account identity when an optional signed ID token matches the access token's workspace, reuses only the same person's workspace on re-login, and rejects refreshes that would switch a stored workspace. Legacy accounts stay unverified without losing their slots or pins.
+
 ### Changed
 
 ### Fixed

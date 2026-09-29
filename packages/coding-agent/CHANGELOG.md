@@ -6,6 +6,8 @@
 
 ### Added
 
+- `/gpt-account` now distinguishes verified email, manual labels and unverified routing hints alongside immutable account IDs; exact unique email or profile selectors can pin an account, and the list, RPC summary and compact footer report expiry, refreshability and re-authentication status without exposing tokens.
+
 ### Changed
 
 ### Fixed
