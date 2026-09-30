@@ -119,7 +119,12 @@ describe("OpenAI Codex OAuth", () => {
 			verifiedEmail: "person@example.test",
 		});
 		expect(JSON.stringify(identity)).not.toContain(valid.idToken);
-		await expect(validateChatGptSubscriptionIdentity(wrongIssuer.idToken, options)).resolves.toBeUndefined();
+		await expect(
+			validateChatGptSubscriptionIdentity(wrongIssuer.idToken, {
+				...options,
+				fetch: async () => jsonResponse(wrongIssuer.jwks),
+			}),
+		).resolves.toBeUndefined();
 		await expect(validateChatGptSubscriptionIdentity("not-a-jwt", options)).resolves.toBeUndefined();
 	});
 

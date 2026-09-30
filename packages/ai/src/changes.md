@@ -1,3 +1,58 @@
+## 2026-09-30 - GPT-6.1 Sol id inference: xhigh/max on, off vetoed for map-less rows (senpi#2390)
+
+### What changed
+
+- `packages/ai/src/models.ts`: `XHIGH_MODEL_IDS` and `OPENAI_MAX_MODEL_IDS` gain `gpt-6.1-sol`, so a custom provider that ships the id without a `thinkingLevelMap` still surfaces `xhigh` and `max` on the OpenAI-compatible APIs. `inferOpenAIThinkingLevelMap` applies the Astra-shaped map (`off: null`, `minimal: null`, low..max) to any id in the new `GPT_6_NO_NONE_EFFORT_MODEL_IDS` list (`gpt-6-astra`, `gpt-6.1-sol`) instead of to Astra alone, because GPT-6.1 Sol documents no `none` effort either.
+- Catalog rows and generator changes for the same release are tracked in `packages/ai/changes.md`.
+
+### Why
+
+A `models.json` or gateway row for `gpt-6.1-sol` without a map would otherwise lose the two top efforts and keep `off` selectable, and selecting it would put `reasoning.effort: none` on the wire, which the model rejects (`test/gpt-6-family-catalog.test.ts`, map-less block).
+
+### Why an extension could not handle it
+
+Effort inference runs inside the model registry before any extension hook sees the model.
+
+### Expected merge conflict zones
+
+- `packages/ai/src/models.ts`: `inferOpenAIThinkingLevelMap` and the `XHIGH_MODEL_IDS` / `OPENAI_MAX_MODEL_IDS` constant block.
+
+## 2026-09-29 - A reason-less forbidden rejection is retried, not treated as terminal (senpi#2376)
+
+### What changed
+
+- `packages/ai/src/utils/retry.ts`: `RETRYABLE_PROVIDER_ERROR_PATTERN` matches the Anthropic `forbidden` error whose message is only `Request not allowed` (either field order, optional status prefix), so `classifyErrorMessage` answers `retryable` instead of `unknown`.
+
+### Why
+
+- A Claude subscription path answered some requests with `{"type":"error","error":{"type":"forbidden","message":"Request not allowed"}}` while the same credential served neighbouring requests with 200, and the burst ended by itself. As "unknown" the session hopped down the fallback ladder at once, onto a provider that could not serve; a bounded same-model retry recovers. `permission_error` and `forbidden` rejections that name a reason stay terminal.
+
+### Why an extension could not handle it
+
+- Retry classification is the shared provider-error classifier every session and summarizer consults before any extension hook runs.
+
+### Expected merge conflict zones
+
+- LOW: the tail of `RETRYABLE_PROVIDER_ERROR_PATTERN` in `packages/ai/src/utils/retry.ts` (two added patterns).
+
+## 2026-09-29 - A provider module removed by a reinstall ends the turn once (#2358)
+
+### What changed
+
+- `packages/ai/src/api/lazy.ts`: a setup failure whose error is a missing shipped `.js` module (`Cannot find module '<path>'`, or Bun's `ENOENT reading "<path>"`) becomes the message from `describeReplacedInstall()`, new in `utils/provider-failure-description.ts` beside the marker it stamps: `senpi:no-turn-retry:` plus "The installed package changed while this session was running, so <file> can no longer be loaded. Restart and resume this session to continue." Other setup failures keep their own text.
+
+### Why
+
+- After a package manager rewrote the install under a running session, the missing provider chunk failed the turn, then the same-model retries and every fallback model failed on the same missing module (#2358). The no-turn-retry marker stops both, and the text says what to do. A bare package name or a `.ts` source path is left alone, so a genuinely missing dependency still reads as itself.
+
+### Why an extension could not handle it
+
+- `lazyStream` builds the error message before any session or extension sees the failure.
+
+### Expected merge conflict zones
+
+- LOW: `createSetupErrorMessage` in `api/lazy.ts`; the end of `utils/provider-failure-description.ts`.
+
 ## 2026-09-29 - ChatGPT subscription identity is verified and refreshes stay in one workspace
 
 ### What changed
@@ -234,6 +289,61 @@
 
 - LOW: the `requestOptions`/`retryProviderRequest` block in `api/openai-responses.ts` if upstream restructures the SSE request path or adds its own transport wrapping.
 - LOW: the regex list in `utils/tool-choice-fallback.ts` (same zone as the senpi#2121 entry).
+
+## 2026-09-28 - allowed_tools no longer names a tool a payload hook removed (senpi#2234)
+
+### What changed
+
+- `packages/ai/src/api/openai-responses.ts`: `applyAllowedToolsChoice` references a declared, active tool that is missing from `tools` only when `splitDeferredTools` deferred it to a transcript item. A function tool that a `before_provider_request` hook removed (the builtin `openai-web-search` extension swaps the `web_search` function for hosted `web_search_preview`) is no longer added back to `tool_choice: allowed_tools`. The new `resolveDeferredToolsMode` gives `buildParams` and `applyAllowedToolsChoice` the same deferred-mode decision.
+
+### Why
+
+- On a model that accepts `allowed_tools`, any inactive declared tool makes the adapter send `allowed_tools`, and the list named the hook-removed `web_search` function, which is not in `tools`. The Responses API rejects such a request with `400 Tool choice 'web_search' not found in 'tools' parameter.`, so native OpenAI sessions with default settings failed every turn.
+
+### Why an extension could not handle it
+
+- The adapter builds `tool_choice` after `onPayload` returns, so a `before_provider_request` hook never sees the `allowed_tools` list it would have to correct.
+
+### Expected merge conflict zones
+
+- LOW: the reference loop in `applyAllowedToolsChoice` and the deferred-mode lines at the top of `buildParams` in `openai-responses.ts`.
+
+## 2026-09-27 - Show nested OpenAI Responses WebSocket errors (senpi#2235)
+
+### What changed
+
+- `packages/ai/src/api/openai-responses-shared.ts`: read nested WebSocket error details and HTTP status when a Responses error event has no top-level code or message, while retaining top-level SSE errors.
+
+### Why
+
+- Rejected WebSocket requests surfaced as `Error Code undefined: undefined` instead of the provider's actionable 400 error message.
+
+### Why an extension could not handle it
+
+- The shared Responses stream parser formats and throws the error before extensions receive a provider error.
+
+### Expected merge conflict zones
+
+- LOW: the `error` event branch in `processResponsesStream`.
+
+## 2026-09-26 - Fold adjacent user messages for non-OpenAI Chat Completions (#2120)
+
+### What changed
+
+- `packages/ai/src/api/openai-completions.ts`: adjacent user messages are emitted as one user message with their content parts kept in order for non-`api.openai.com` hosts; direct OpenAI requests retain their existing message boundaries.
+- `packages/ai/test/openai-completions-message-order.test.ts`: covers folding on a compatible host and preserving the direct OpenAI wire shape.
+
+### Why
+
+- OpenAI-compatible servers with alternation-enforcing chat templates reject a prompt followed by an extension or next-turn user message as consecutive user roles.
+
+### Why an extension could not handle it
+
+- The adapter builds the provider-specific message list after extension hooks run; only the converter can preserve content ordering while changing the wire role sequence.
+
+### Expected merge conflict zones
+
+- LOW: `packages/ai/src/api/openai-completions.ts` near `convertMessages`; the new focused test is isolated from shared fixtures.
 
 ## 2026-09-27 - Terminal provider errors keep the provider Retry-After; quota exhaustion wording is shared (senpi#2198)
 
@@ -643,6 +753,24 @@ These are the ai package's own provider factories, OAuth module registry and exp
 
 - `packages/ai/src/providers/all.ts` and `packages/ai/src/index.ts` export lists, against any other provider addition.
 - `packages/ai/src/auth/oauth/load.ts` module map, against any other OAuth provider.
+
+## 2026-09-22 - Normalize Bedrock root tool schemas (#1947)
+
+### What changed
+
+- `packages/ai/src/api/bedrock-converse-stream.ts` normalizes root parameters before strict sampling. `packages/ai/src/utils/tool-schema-compat.ts` supplies the Bedrock-specific object-composition normalization.
+
+### Why
+
+- `packages/ai/src/api/bedrock-converse-stream.ts` sent missing object types and forbidden root combiners. `packages/ai/src/utils/tool-schema-compat.ts` now preserves alternative properties, intersection constraints and required names without changing other providers' allOf boundary.
+
+### Why an extension could not handle it
+
+- `packages/ai/src/api/bedrock-converse-stream.ts` owns the SDK request; the shared conversion in `packages/ai/src/utils/tool-schema-compat.ts` must also cover direct SDK consumers.
+
+### Expected merge conflict zones
+
+- LOW: `packages/ai/src/api/bedrock-converse-stream.ts` tool conversion and `packages/ai/src/utils/tool-schema-compat.ts` root-object merge.
 
 ## 2026-09-22 - legacy provider id read helpers (senpi#1989)
 

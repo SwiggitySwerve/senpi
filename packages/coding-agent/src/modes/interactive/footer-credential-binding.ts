@@ -1,11 +1,11 @@
 import { normalizeProviderId } from "@earendil-works/pi-ai";
+import type { AgentSession } from "../../core/agent-session.ts";
 import { getCredentialAccountSnapshot } from "../../core/credential-accounts.ts";
 import { CredentialSlotRepository } from "../../core/credential-pool/state-store.ts";
 import type { FooterDataProvider } from "../../core/footer-data-provider.ts";
-import type { InteractiveSession } from "./interactive-host-runtime.ts";
 
 /** Local and shared-host sessions use the same secret-free session event surface. */
-export function bindFooterCredentialAccounts(footer: FooterDataProvider, session: InteractiveSession): void {
+export function bindFooterCredentialAccounts(footer: FooterDataProvider, session: AgentSession): void {
 	if (normalizeProviderId(session.state.model?.provider ?? "") !== "chatgpt-subscription") {
 		footer.setCredentialAccountSource(undefined);
 		return;
